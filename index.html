@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dialogue Tension Mapper</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+<div class="max-w-5xl mx-auto p-4">
+  <header class="text-center py-6">
+    <h1 class="text-3xl font-bold text-violet-400">🎭 Dialogue Tension Mapper</h1>
+    <p class="text-gray-400 mt-1">Score emotional tension, power shifts & dramatic arc per line of dialogue</p>
+  </header>
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Script Input -->
+    <div class="space-y-4">
+      <div class="bg-gray-900 rounded-2xl p-5 border border-gray-700">
+        <h2 class="font-semibold text-violet-400 mb-3">Script Input</h2>
+        <p class="text-xs text-gray-500 mb-3">Format: SPEAKER: dialogue text (one line per turn)</p>
+        <textarea id="scriptInput" rows="8" placeholder="ALICE: I need to talk to you about something serious.
+BOB: What is it? You're scaring me.
+ALICE: I found the letter. I know everything.
+BOB: That's... that's not what it looks like.
+ALICE: How could you lie to me for three years?
+BOB: I was protecting you.
+ALICE: From what exactly? The truth?
+BOB: Please, just let me explain.
+ALICE: There's nothing to explain. We're done." class="w-full bg-gray-800 border border-gray-600 rounded-xl px-3 py-2 text-sm text-gray-100 focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"></textarea>
+        <button onclick="analyzeScript()" class="mt-3 w-full bg-violet-600 hover:bg-violet-700 text-white font-semibold py-2 rounded-lg text-sm transition">🔍 Analyze</button>
+      </div>
+
+      <!-- Line Editor -->
+      <div class="bg-gray-900 rounded-2xl p-5 border border-gray-700">
+        <h2 class="font-semibold text-violet-400 mb-3">Manual Line Edit</h2>
+        <p class="text-xs text-gray-500 mb-3">Adjust scores after analysis by clicking any line in the visualization</p>
+        <div id="lineEditor" class="text-gray-500 text-sm italic">Select a line to edit its scores</div>
+      </div>
+    </div>
+
+    <!-- Visualization -->
+    <div class="space-y-4">
+      <div class="bg-gray-900 rounded-2xl p-5 border border-gray-700">
+        <h2 class="font-semibold text-violet-400 mb-3">Tension Landscape</h2>
+        <div id="tensionChart"></div>
+      </div>
+
+      <div class="bg-gray-900 rounded-2xl p-5 border border-gray-700">
+        <h2 class="font-semibold text-violet-400 mb-3">Dramatic Analysis</h2>
+        <div id="dramaticAnalysis" class="text-gray-400 text-sm italic">Run analysis to see results</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Line-by-line breakdown -->
+  <div class="mt-6 bg-gray-900 rounded-2xl p-5 border border-gray-700">
+    <h2 class="font-semibold text-violet-400 mb-4">Line-by-Line Breakdown</h2>
+    <div id="lineBreakdown" class="space-y-2"></div>
+  </div>
+</div>
+
+<script>
+let dialogueLines = [];
+let selectedLine = null;
+
+// Tension vocabulary patterns
+const HIGH_TENSION_WORDS = /\b(know|lie|truth|betrayal|never|always|hate|done|over|why|how could|impossible|stop|enough|leave|go|die|wrong|fault|blame|hurt|end|last|final|secret|found|caught|lied|cheated|betrayed|threaten|scream|yell|cry|angry|furious|rage|destroy|kill|ruin)\b/gi;
+const QUESTION_PATTERNS = /\?/g;
+const EXCLAMATION = /!/g;
+const CAPITALIZED_WORDS = /\b[A-Z]{2,}\b/g;
+const AGREEMENT_WORDS = /\b(yes|right|exactly|agree|okay|sure|fine|understand|okay|alright|of course|absolutely|definitely)\b/gi;
+const DISAGREEMENT_WORDS = /\b(no|never|wrong|false|don't|won't|can't|not|nothing|nobody|hardly|barely|impossible|refuse|disagree)\b/gi;
+
+const POWER_UP = /\b(I need|you must|you should|I demand|you will|I know|let me|I decide|my choice|I'm in charge|I told you|because I|I own|I control)\b/gi;
+const POWER_DOWN = /\b(I'm sorry|please|forgive|I was wrong|I didn't mean|help me|I need you|I can't|I give up|you're right|whatever you want|I'll do anything)\b/gi;
+
+function scoreLine(text) {
+  const high = (text.match(HIGH_TENSION_WORDS) || []).length;
+  const questions = (text.match(QUESTION_PATTERNS) || []).length;
+  const exclamations = (text.match(EXCLAMATION) || []).length;
+  const caps = (text.match(CAPITALIZED_WORDS) || []).length;
+  const agree = (text.match(AGREEMENT_WORDS) || []).length;
+  const disagree = (text.match(DISAGREEMENT_WORDS) || []).length;
+  const powerUp = (text.match(POWER_UP) || []).length;
+  const powerDown = (text.match(POWER_DOWN) || []).length;
+  const length = text.split(/\s+/).length;
+
+  const tension = Math.min(10, Math.round(
+    high * 1.5 + questions * 0.5 + exclamations * 0.8 + caps * 1.2 + disagree * 0.5
+  ));
+
+  const agreementScore = Math.min(10, agree * 2);
+  const disagreementScore = Math.min(10, disagree * 2);
+  const powerShift = Math.max(-5, Math.min(5, powerUp - powerDown));
+
+  const emotion = high > 2 ? 'confrontational' : questions > 1 ? 'interrogative' : agree > 0 ? 'conciliatory' : powerDown > 0 ? 'submissive' : length < 5 ? 'terse' : 'neutral';
+
+  return { tension, agreementScore, disagreementScore, powerShift, emotion, length };
+}
+
+function parseScript(text) {
+  const lines = text.trim().split('\n').filter(l => l.trim());
+  const speakers = {};
+  let speakerIdx = 0;
+  const colors = ['#a78bfa','#34d399','#f472b6','#fb923c','#60a5fa','#fbbf24','#f87171'];
+
+  return lines.map((line, i) => {
+    const colonIdx = line.indexOf(':');
+    let speaker = 'NARRATOR', dialogue = line;
+    if (colonIdx > 0 && colonIdx < 20) {
+      speaker = line.substring(0, colonIdx).trim().toUpperCase();
+      dialogue = line.substring(colonIdx + 1).trim();
+    }
+    if (!speakers[speaker]) {
+      speakers[speaker] = colors[speakerIdx++ % colors.length];
+    }
+    return { id: i, speaker, dialogue, color: speakers[speaker], scores: scoreLine(dialogue) };
+  });
+}
+
+function analyzeScript() {
+  const text = document.getElementById('scriptInput').value;
+  if (!text.trim()) return alert('Paste a script first');
+  dialogueLines = parseScript(text);
+  renderAll();
+}
+
+function renderAll() {
+  renderTensionChart();
+  renderDramaticAnalysis();
+  renderLineBreakdown();
+}
+
+function renderTensionChart() {
+  const container = document.getElementById('tensionChart');
+  if (dialogueLines.length === 0) { container.innerHTML = '<p class="text-gray-500 text-sm italic">No data</p>'; return; }
+
+  const W = 460, H = 160;
+  const n = dialogueLines.length;
+  const stepX = (W - 40) / Math.max(1, n - 1);
+
+  const tensionPts = dialogueLines.map((l, i) => `${20 + i * stepX},${H - 20 - (l.scores.tension / 10) * (H - 30)}`).join(' ');
+
+  // Power shift bars
+  const powerBars = dialogueLines.map((l, i) => {
+    const x = 20 + i * stepX - 4;
+    const shift = l.scores.powerShift;
+    const barH = Math.abs(shift) * 4;
+    const y = shift > 0 ? H/2 - barH : H/2;
+    const fill = shift > 0 ? '#a78bfa' : shift < 0 ? '#f472b6' : '#374151';
+    return `<rect x="${x}" y="${y}" width="8" height="${barH || 1}" fill="${fill}" opacity="0.5"/>`;
+  }).join('');
+
+  // Grid
+  const gridLines = [0,2.5,5,7.5,10].map(v => {
+    const y = H - 20 - (v/10) * (H - 30);
+    return `<line x1="18" y1="${y}" x2="${W}" y2="${y}" stroke="#374151" stroke-width="0.5"/>
+      <text x="15" y="${y+3}" text-anchor="end" font-size="7" fill="#6b7280">${v}</text>`;
+  }).join('');
+
+  // Speaker dots
+  const dots = dialogueLines.map((l, i) => {
+    const x = 20 + i * stepX;
+    const y = H - 20 - (l.scores.tension / 10) * (H - 30);
+    return `<circle cx="${x}" cy="${y}" r="4" fill="${l.color}" stroke="#111827" stroke-width="1.5" style="cursor:pointer" onclick="selectLine(${i})">
+      <title>${l.speaker}: tension ${l.scores.tension}</title>
+    </circle>`;
+  }).join('');
+
+  container.innerHTML = `<svg viewBox="0 0 ${W} ${H}" class="w-full" height="${H}">
+    ${gridLines}
+    <line x1="18" y1="${H/2}" x2="${W}" y2="${H/2}" stroke="#374151" stroke-width="0.5" stroke-dasharray="3,3"/>
+    ${powerBars}
+    <polyline points="${tensionPts}" fill="none" stroke="#a78bfa" stroke-width="2.5" stroke-linejoin="round"/>
+    ${dots}
+    <text x="${W-5}" y="12" text-anchor="end" font-size="8" fill="#a78bfa">─ Tension</text>
+    <text x="${W-5}" y="22" text-anchor="end" font-size="8" fill="#6b7280">▮ Power Shift</text>
+  </svg>`;
+}
+
+function renderDramaticAnalysis() {
+  const container = document.getElementById('dramaticAnalysis');
+  if (dialogueLines.length === 0) return;
+
+  const tensions = dialogueLines.map(l => l.scores.tension);
+  const avg = tensions.reduce((a,b)=>a+b,0) / tensions.length;
+  const peak = Math.max(...tensions);
+  const peakLine = dialogueLines[tensions.indexOf(peak)];
+  const climaxPos = Math.round((tensions.indexOf(peak) / tensions.length) * 100);
+
+  const speakers = [...new Set(dialogueLines.map(l => l.speaker))];
+  const dominantSpeaker = speakers.map(s => ({
+    s,
+    power: dialogueLines.filter(l => l.speaker === s).reduce((sum, l) => sum + l.scores.powerShift, 0)
+  })).sort((a,b) => b.power - a.power)[0];
+
+  const totalAgreement = dialogueLines.reduce((s, l) => s + l.scores.agreementScore, 0);
+  const totalDisagreement = dialogueLines.reduce((s, l) => s + l.scores.disagreementScore, 0);
+  const dynamic = totalDisagreement > totalAgreement ? 'Conflictual' : totalAgreement > totalDisagreement ? 'Conciliatory' : 'Mixed';
+
+  container.innerHTML = `
+    <div class="grid grid-cols-2 gap-3 mb-4">
+      <div class="bg-gray-800 rounded-xl p-3">
+        <p class="text-xs text-gray-400">Avg Tension</p>
+        <p class="text-xl font-bold text-violet-400">${avg.toFixed(1)}/10</p>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3">
+        <p class="text-xs text-gray-400">Peak Tension</p>
+        <p class="text-xl font-bold text-red-400">${peak}/10 @ ${climaxPos}%</p>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3">
+        <p class="text-xs text-gray-400">Dynamic</p>
+        <p class="text-sm font-bold text-yellow-400">${dynamic}</p>
+      </div>
+      <div class="bg-gray-800 rounded-xl p-3">
+        <p class="text-xs text-gray-400">Dominant Speaker</p>
+        <p class="text-sm font-bold" style="color:${dominantSpeaker ? dialogueLines.find(l=>l.speaker===dominantSpeaker.s)?.color : '#fff'}">${dominantSpeaker?.s || '—'}</p>
+      </div>
+    </div>
+    ${peakLine ? `<div class="bg-gray-800 rounded-xl p-3 text-xs">
+      <p class="text-gray-400 mb-1">Peak Tension Line:</p>
+      <p class="text-gray-200 italic">"${peakLine.dialogue}"</p>
+      <p class="text-gray-500 mt-1">— ${peakLine.speaker}</p>
+    </div>` : ''}
+  `;
+}
+
+function renderLineBreakdown() {
+  const container = document.getElementById('lineBreakdown');
+  if (dialogueLines.length === 0) { container.innerHTML = '<p class="text-gray-500 text-sm italic">No script analyzed yet</p>'; return; }
+
+  const EMOTION_COLORS = {
+    confrontational: 'text-red-400',
+    interrogative: 'text-yellow-400',
+    conciliatory: 'text-green-400',
+    submissive: 'text-blue-400',
+    terse: 'text-orange-400',
+    neutral: 'text-gray-400'
+  };
+
+  container.innerHTML = dialogueLines.map((l, i) => {
+    const tensionPct = l.scores.tension * 10;
+    const isSelected = selectedLine === i;
+    return `<div class="bg-gray-800 rounded-xl p-3 cursor-pointer ${isSelected ? 'ring-2 ring-violet-500' : ''} hover:bg-gray-750 transition" onclick="selectLine(${i})">
+      <div class="flex items-start gap-3">
+        <span class="text-xs font-bold shrink-0 w-6 text-center text-gray-500">${i+1}</span>
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-1">
+            <span class="text-xs font-bold" style="color:${l.color}">${l.speaker}</span>
+            <span class="text-xs ${EMOTION_COLORS[l.scores.emotion] || 'text-gray-400'}">${l.scores.emotion}</span>
+            ${l.scores.powerShift > 0 ? '<span class="text-xs text-violet-400">↑ power</span>' : l.scores.powerShift < 0 ? '<span class="text-xs text-pink-400">↓ power</span>' : ''}
+          </div>
+          <p class="text-sm text-gray-200">"${l.dialogue}"</p>
+          <div class="mt-2 h-1.5 bg-gray-700 rounded-full overflow-hidden">
+            <div class="h-full rounded-full bg-gradient-to-r from-violet-500 to-red-500 transition-all" style="width:${tensionPct}%"></div>
+          </div>
+          <div class="flex justify-between text-xs mt-0.5">
+            <span class="text-gray-500">tension</span>
+            <span class="text-violet-400 font-bold">${l.scores.tension}/10</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function selectLine(idx) {
+  selectedLine = idx;
+  const line = dialogueLines[idx];
+  const editor = document.getElementById('lineEditor');
+  editor.innerHTML = `
+    <p class="text-xs text-gray-400 mb-2 italic">"${line.dialogue.substring(0,60)}..."</p>
+    <div class="space-y-2">
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-gray-400 w-20">Tension</label>
+        <input type="range" min="0" max="10" value="${line.scores.tension}" oninput="updateScore(${idx},'tension',parseInt(this.value));document.getElementById('te-v').textContent=this.value" class="flex-1 accent-violet-500">
+        <span id="te-v" class="text-xs text-violet-400 w-4">${line.scores.tension}</span>
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-gray-400 w-20">Power Shift</label>
+        <input type="range" min="-5" max="5" value="${line.scores.powerShift}" oninput="updateScore(${idx},'powerShift',parseInt(this.value));document.getElementById('ps-v').textContent=this.value" class="flex-1 accent-pink-500">
+        <span id="ps-v" class="text-xs text-pink-400 w-4">${line.scores.powerShift}</span>
+      </div>
+    </div>`;
+  renderLineBreakdown();
+}
+
+function updateScore(idx, key, value) {
+  if (dialogueLines[idx]) {
+    dialogueLines[idx].scores[key] = value;
+    renderTensionChart();
+    renderDramaticAnalysis();
+  }
+}
+
+// Auto-analyze if there's content
+document.getElementById('scriptInput').addEventListener('input', () => {});
+</script>
+</body>
+</html>
